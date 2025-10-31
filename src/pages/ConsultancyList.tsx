@@ -64,6 +64,15 @@ const ConsultancyList: React.FC = () => {
   useEffect(() => {
     let filtered = [...consultancyBookings];
 
+    // Exclude past days (only show days that haven't passed)
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    filtered = filtered.filter((booking) => {
+      const bookingDay = new Date(booking.selectedSlot);
+      bookingDay.setHours(0, 0, 0, 0);
+      return bookingDay.getTime() >= today.getTime();
+    });
+
     // Apply status filter
     if (statusFilter === 'active') {
       filtered = filtered.filter(booking => !booking.AdminCancelled);
