@@ -44,7 +44,7 @@ If you have the Vercel CLI installed:
 npm install -g vercel
 
 # Login to Vercel
-vercel login
+1
 
 # Link your project
 vercel link

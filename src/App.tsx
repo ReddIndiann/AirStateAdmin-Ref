@@ -12,6 +12,7 @@ import AdminConsultancyPage from "./pages/AdminConsultancy";
 function App() {
   const [loading, setLoading] = useState(true);
 
+  
   // Simulate loading for splash screen (e.g., 1 second)
   useEffect(() => {
     const timer = setTimeout(() => {
