@@ -13,6 +13,7 @@ interface TabButtonProps {
   onClick: () => void;
 }
 
+
 // Tab component for better organization
 const TabButton: React.FC<TabButtonProps> = ({ active, icon: Icon, label, onClick }) => (
   <button

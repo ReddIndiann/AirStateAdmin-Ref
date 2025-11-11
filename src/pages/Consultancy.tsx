@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { toast, Toaster } from 'react-hot-toast';
 import { Link } from 'react-router-dom';
 import { db } from '../firebase/config';
@@ -25,6 +25,16 @@ const Consultancy: React.FC = () => {
   // State for admin-cancelled slots
   const [adminCancelledSlots, setAdminCancelledSlots] = useState<UserBooking[]>([]);
 
+  const upcomingAdminCancelledSlots = useMemo(() => {
+    const now = Date.now();
+
+    return adminCancelledSlots.filter((slot) => {
+      if (slot.deleted) return false;
+
+      return slot.selectedSlot.getTime() >= now;
+    });
+  }, [adminCancelledSlots]);
+
   useEffect(() => {
     const auth = getAuth();
     const userId = auth.currentUser?.uid;
@@ -34,10 +44,9 @@ const Consultancy: React.FC = () => {
       return;
     }
 
-    // User bookings listener - only show valid bookings (not admin cancelled)
+    // User bookings listener - fetch all bookings and filter out admin-cancelled ones client-side
     const userBookingsQuery = query(
       collection(db, 'consultancy_bookings'),
-      where('AdminCancelled', '==', false),
       orderBy('createdAt', 'desc')
     );
 
@@ -51,9 +60,9 @@ const Consultancy: React.FC = () => {
         })) as UserBooking[];
 
         setUserBookings(
-          bookings.sort(
-            (a, b) => b.selectedSlot.getTime() - a.selectedSlot.getTime()
-          )
+          bookings
+            .filter((booking) => booking.AdminCancelled !== true)
+            .sort((a, b) => b.selectedSlot.getTime() - a.selectedSlot.getTime())
         );
       },
       (error) => {
@@ -478,16 +487,14 @@ const Consultancy: React.FC = () => {
         <div className="bg-white rounded-lg shadow-sm border p-6 mt-8">
           <h2 className="text-xl font-semibold mb-4 flex items-center">
             <Clock className="w-5 h-5 mr-2 text-red-500" />
-            Admin Cancelled Time Slots ({adminCancelledSlots.length})
+            Admin Cancelled Time Slots ({upcomingAdminCancelledSlots.length})
           </h2>
           <p className="text-sm text-gray-600 mb-6">Time slots that have been marked as unavailable by admin</p>
           
-          {adminCancelledSlots.length > 0 ? (
+          {upcomingAdminCancelledSlots.length > 0 ? (
             <div className="overflow-auto max-h-96">
               <div className="grid gap-3">
-                {adminCancelledSlots
-                  .filter(slot => !slot.deleted)
-                  .map((slot) => (
+                {upcomingAdminCancelledSlots.map((slot) => (
                     <div key={slot.id} className="flex items-center justify-between p-4 bg-red-50 border border-red-200 rounded-lg">
                       <div className="flex items-center space-x-4">
                         <Calendar className="w-5 h-5 text-red-500" />
@@ -534,8 +541,8 @@ const Consultancy: React.FC = () => {
           ) : (
             <div className="text-center py-8 text-gray-500">
               <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
-              <p>No cancelled time slots</p>
-              <p className="text-sm">All time slots are currently available</p>
+              <p>No upcoming cancelled time slots</p>
+              <p className="text-sm">All upcoming time slots are currently available</p>
             </div>
           )}
         </div>
