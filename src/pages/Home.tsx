@@ -2,14 +2,16 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 
 import { 
- 
+  
   MdChevronLeft, 
   MdChevronRight, 
   MdInsights,
   MdPendingActions,
   MdAccessTime,
   MdCheckCircle,
-  MdOutlineInbox
+  MdOutlineInbox,
+  MdSms,
+  MdPhone
 } from "react-icons/md";
 
 import EditRequestModal from '../components/EditRequestModal';
@@ -18,6 +20,7 @@ import {  Request, Consultancy } from '../types';
 import LoadingSpinner from '../components/LoadingSpinner';
 import { fetchRequests, fetchConsultancy } from '../lib/newHomeUtils';
 import RequestDetailModal from '../components/RequestDetailModal';
+import { getMNotifyBalances, MNotifyBalance } from '../lib/mNotifyUtil';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -27,6 +30,11 @@ export default function Home() {
   const [consultancy, setConsultancy] = useState<Consultancy[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+  const [mNotifyBalances, setMNotifyBalances] = useState<MNotifyBalance>({
+    smsBalance: null,
+    smsBonus: null,
+    voiceBalance: null
+  });
 
  
   const rowsPerPage = 4;
@@ -86,9 +94,19 @@ export default function Home() {
         setIsLoading(false);
       }
     };
+
+    const loadMNotifyBalances = async () => {
+      try {
+        const balances = await getMNotifyBalances();
+        setMNotifyBalances(balances);
+      } catch (error) {
+        console.error('Error loading mNotify balances:', error);
+      }
+    };
     
     loadRequestsData();
     loadConsultancyData();
+    loadMNotifyBalances();
   }, []);
 
   // Pagination handlers
@@ -305,6 +323,24 @@ export default function Home() {
       bgColor: "bg-green-100",
       textColor: "text-green-600",
       onClick: () => navigate('/consultancy')
+    },
+    {
+      title: "SMS Balance",
+      value: mNotifyBalances.smsBalance !== null ? mNotifyBalances.smsBalance.toLocaleString() : 'N/A',
+      description: mNotifyBalances.smsBonus !== null ? `Bonus: ${mNotifyBalances.smsBonus.toLocaleString()}` : mNotifyBalances.error || "mNotify SMS",
+      icon: <MdSms size={20} />,
+      bgColor: "bg-blue-100",
+      textColor: "text-blue-600",
+      onClick: () => navigate('/admin-configuration')
+    },
+    {
+      title: "Voice Balance",
+      value: mNotifyBalances.voiceBalance !== null ? mNotifyBalances.voiceBalance.toLocaleString() : 'N/A',
+      description: mNotifyBalances.error || "mNotify Voice",
+      icon: <MdPhone size={20} />,
+      bgColor: "bg-purple-100",
+      textColor: "text-purple-600",
+      onClick: () => navigate('/admin-configuration')
     }
   ];
 

@@ -10,13 +10,15 @@ import {
   Upload, 
   Info,
   Wallet,
-  MessageSquare
+  MessageSquare,
+  Mail
 } from 'lucide-react';
 import { db, storage } from '../firebase/config';  // Ensure to import your Firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore';  // Import Firestore functions
 import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';  // Import Firebase Storage functions
 import { ClientMessaging } from '../pages';
 import axios from 'axios';
+import { generateQueryMessage, generateCompletionMessage } from '../lib/deepLinkUtil';
 
 import { Request } from '../types';
 
@@ -33,6 +35,9 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
   const [walletNumber, setWalletNumber] = useState<string>('');
   const [userEmail, setUserEmail] = useState<string>('');
   const [activeTab, setActiveTab] = useState<'details' | 'messaging'>('details');
+  const [sendSMS, setSendSMS] = useState<boolean>(true);
+  const [sendEmail, setSendEmail] = useState<boolean>(true);
+  const [errorMessage, setErrorMessage] = useState<string>('');
   
   // Set initial state of the checkbox based on isDocumentValid
   useEffect(() => {
@@ -93,19 +98,26 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
     }
   };
 
-  const sendNotification = async (clientsname: string, clientsnumber: string, clientEmail: string, userMessage: string, adminMessage: string) => {
+  const sendNotification = async (
+    clientName: string,
+    clientNumber: string,
+    clientEmail: string,
+    message: string,
+    sendSMS: boolean,
+    sendEmail: boolean
+  ) => {
     try {
       const notificationData = {
-        clientsname,
-        clientsnumber,
+        clientName,
+        clientNumber,
         clientEmail,
-        userMessage,
-        adminMessage,
-        header: ""
+        message,
+        sendSMS,
+        sendEmail
       };
 
       const response = await axios.post(
-        'https://us-central1-airstatefinder.cloudfunctions.net/notifyAdminAndUser',
+        'https://us-central1-airstatefinder.cloudfunctions.net/notifyUser',
         notificationData,
         {
           headers: {
@@ -121,6 +133,7 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
       console.log('Notification sent successfully');
     } catch (error) {
       console.error('Error sending notification:', error);
+      throw error; // Re-throw to handle in calling function
     }
   };
 
@@ -144,55 +157,141 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
     if (!confirm) {
       // If user cancels, just close the confirmation modal
       setIsConfirmationOpen(false);
+      setErrorMessage('');
       return;
     }
 
     if (request) {
-      const requestDocRef = doc(db, 'requests', request.documentId);
+      try {
+        setErrorMessage('');
+        const requestDocRef = doc(db, 'requests', request.documentId);
 
-      // If the checkbox is checked, update isDocumentValid to 'pending'
-      if (isImageNotClear) {
-        await updateDoc(requestDocRef, {
-          isDocumentValid: false,
-        });
+        // If the checkbox is checked, update isDocumentValid to 'pending'
+        if (isImageNotClear) {
+          await updateDoc(requestDocRef, {
+            isDocumentValid: false,
+          });
 
-        // Send notification for invalid image
-        await sendNotification(
-          request.name,
-          request.phoneNumber,
-          userEmail || request.userId, // Use actual email if available, fallback to userId
-          "Your document image is not clear. Please resend a clearer version.",
-          `Document image marked as invalid for ${request.name}. User needs to resend clearer image.`
-        );
-      } else if (!isImageNotClear && file) {
-        // Upload file to Firebase Storage
-        const userId = request.userId;
-        const storageRef = ref(storage, `uploads/${userId}/${file.name}`);
-        await uploadBytes(storageRef, file);
+          // Generate messages for SMS and Email separately if both are selected
+          // SMS needs proper URL formatting to be clickable
+          const smsMessage = sendSMS ? generateQueryMessage(
+            request.documentId,
+            "Your document image is not clear. Please resend a clearer version.",
+            true // isSMS = true
+          ) : '';
+          
+          const emailMessage = sendEmail ? generateQueryMessage(
+            request.documentId,
+            "Your document image is not clear. Please resend a clearer version.",
+            false // isSMS = false
+          ) : '';
+          
+          // Use the appropriate message based on what's being sent
+          // If both are selected, use SMS format (shorter, more SMS-friendly)
+          const messageToSend = sendSMS ? smsMessage : emailMessage;
+          
+          // Validate that at least one notification method is selected
+          if (!sendSMS && !sendEmail) {
+            setErrorMessage('Please select at least one notification method (SMS or Email)');
+            return;
+          }
 
-        // Get the download URL for the uploaded file
-        const fileURL = await getDownloadURL(storageRef);
+          // Validate email if email is selected
+          if (sendEmail && !userEmail) {
+            setErrorMessage('Email is required when sending email notification');
+            return;
+          }
 
-        // Update Firestore document with new document URL and status
-        await updateDoc(requestDocRef, {
-          resultsUrl: fileURL,   // Set the new document URL
-          status: true,   // Set the status to 'Approved'
-          isDocumentValid: true
-        });
+          // Validate phone number if SMS is selected
+          if (sendSMS && !request.phoneNumber) {
+            setErrorMessage('Phone number is required when sending SMS notification');
+            return;
+          }
+          
+          await sendNotification(
+            request.name,
+            request.phoneNumber || '',
+            userEmail || '',
+            messageToSend,
+            sendSMS,
+            sendEmail
+          );
+        } else if (!isImageNotClear && file) {
+          // Upload file to Firebase Storage
+          const userId = request.userId;
+          const storageRef = ref(storage, `uploads/${userId}/${file.name}`);
+          await uploadBytes(storageRef, file);
 
-        // Send notification for results sent
-        await sendNotification(
-          request.name,
-          request.phoneNumber,
-          userEmail || request.userId, // Use actual email if available, fallback to userId
-          "Your results are ready! Please check your request details.",
-          `Results have been sent to ${request.name} for ${request.serviceType} service.`
-        );
+          // Get the download URL for the uploaded file
+          const fileURL = await getDownloadURL(storageRef);
+
+          // Update Firestore document with new document URL and status
+          await updateDoc(requestDocRef, {
+            resultsUrl: fileURL,   // Set the new document URL
+            status: true,   // Set the status to 'Approved'
+            isDocumentValid: true
+          });
+
+          // Generate messages for SMS and Email separately if both are selected
+          // SMS needs proper URL formatting to be clickable
+          const smsMessage = sendSMS ? generateCompletionMessage(
+            request.documentId,
+            "Your results are ready! Please check your request details.",
+            true // isSMS = true
+          ) : '';
+          
+          const emailMessage = sendEmail ? generateCompletionMessage(
+            request.documentId,
+            "Your results are ready! Please check your request details.",
+            false // isSMS = false
+          ) : '';
+          
+          // Use the appropriate message based on what's being sent
+          // If both are selected, use SMS format (shorter, more SMS-friendly)
+          const messageToSend = sendSMS ? smsMessage : emailMessage;
+          
+          // Validate that at least one notification method is selected
+          if (!sendSMS && !sendEmail) {
+            setErrorMessage('Please select at least one notification method (SMS or Email)');
+            return;
+          }
+
+          // Validate email if email is selected
+          if (sendEmail && !userEmail) {
+            setErrorMessage('Email is required when sending email notification');
+            return;
+          }
+
+          // Validate phone number if SMS is selected
+          if (sendSMS && !request.phoneNumber) {
+            setErrorMessage('Phone number is required when sending SMS notification');
+            return;
+          }
+          
+          await sendNotification(
+            request.name,
+            request.phoneNumber || '',
+            userEmail || '',
+            messageToSend,
+            sendSMS,
+            sendEmail
+          );
+        }
+
+        // Close the modal after confirmation
+        setIsConfirmationOpen(false);
+        setErrorMessage('');
+        onClose();
+      } catch (error) {
+        console.error('Error in handleConfirmation:', error);
+        if (axios.isAxiosError(error)) {
+          setErrorMessage(error.response?.data?.error || error.message || 'Failed to send notification');
+        } else if (error instanceof Error) {
+          setErrorMessage(error.message);
+        } else {
+          setErrorMessage('An unexpected error occurred');
+        }
       }
-
-      // Close the modal after confirmation
-      setIsConfirmationOpen(false);
-      onClose();
     }
   };
 
@@ -337,6 +436,39 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
         </label>
       </div>
 
+      {/* Notification Method Selection */}
+      <div className="bg-gray-50 rounded-lg p-3 mb-4">
+        <p className="text-sm font-semibold text-gray-700 mb-2">Notification Method</p>
+        <div className="flex flex-col space-y-2">
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendSMS}
+              onChange={(e) => setSendSMS(e.target.checked)}
+              className="h-4 w-4 text-red-600 rounded focus:ring-red-500"
+              disabled={!request.phoneNumber}
+            />
+            <MessageSquare className="text-gray-500" size={16} />
+            <span className="text-sm text-gray-700">
+              Send SMS {!request.phoneNumber && '(Phone number not available)'}
+            </span>
+          </label>
+          <label className="flex items-center space-x-2 cursor-pointer">
+            <input
+              type="checkbox"
+              checked={sendEmail}
+              onChange={(e) => setSendEmail(e.target.checked)}
+              className="h-4 w-4 text-red-600 rounded focus:ring-red-500"
+              disabled={!userEmail}
+            />
+            <Mail className="text-gray-500" size={16} />
+            <span className="text-sm text-gray-700">
+              Send Email {!userEmail && '(Email not available)'}
+            </span>
+          </label>
+        </div>
+      </div>
+
       {/* File Upload */}
       <div className="bg-gray-100 rounded-lg p-3 mb-4">
         <label htmlFor="uploadResults" className="flex items-center space-x-2 cursor-pointer">
@@ -447,6 +579,11 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
         <div className="fixed inset-0 flex items-center justify-center bg-black bg-opacity-50 z-60 p-4">
           <div className="bg-white rounded-xl p-6 max-w-md w-full">
             <p className="text-lg font-semibold text-gray-700">{confirmationMessage}</p>
+            {errorMessage && (
+              <div className="mt-4 p-3 bg-red-50 border border-red-200 rounded-lg">
+                <p className="text-sm text-red-700">{errorMessage}</p>
+              </div>
+            )}
             <div className="flex justify-end space-x-4 mt-6">
               <button
                 onClick={() => handleConfirmation(false)}
