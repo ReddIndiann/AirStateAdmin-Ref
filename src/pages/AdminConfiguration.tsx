@@ -1,10 +1,11 @@
 import React, { useState, useEffect, useCallback } from 'react';
-import { db } from '../firebase/config';
+import { db, storage } from '../firebase/config';
 import { collection, getDocs, query, updateDoc, doc } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { toast } from 'react-hot-toast';
 import { 
   Eye, EyeOff, Edit2, X, Save, Settings, FileText, 
-  DollarSign, Mail, Phone, Key, User, MessageSquare, MapPin, Image 
+  DollarSign, Mail, Phone, Key, User, MessageSquare, MapPin, Image, Upload, Trash2
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -221,10 +222,20 @@ const AdminConfiguration: React.FC = () => {
     emailServicePass: false,
     mNotifyApikey: false,
   });
+  const [advertImageFile, setAdvertImageFile] = useState<File | null>(null);
+  const [advertImagePreview, setAdvertImagePreview] = useState<string | null>(null);
+  const [uploadingImage, setUploadingImage] = useState<boolean>(false);
 
   useEffect(() => {
     fetchAllData();
   }, []);
+
+  useEffect(() => {
+    // Set preview from existing URL when data is loaded
+    if (advertData.advertImageUrl && !advertImagePreview && !advertImageFile) {
+      setAdvertImagePreview(advertData.advertImageUrl);
+    }
+  }, [advertData.advertImageUrl]);
 
   useEffect(() => {
     if (isEditing) {
@@ -276,6 +287,43 @@ const AdminConfiguration: React.FC = () => {
     []
   );
 
+  const handleImageUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) {
+      // Validate file type
+      if (!file.type.startsWith('image/')) {
+        toast.error('Please select an image file');
+        return;
+      }
+      
+      // Validate file size (e.g., max 5MB)
+      if (file.size > 5 * 1024 * 1024) {
+        toast.error('Image size must be less than 5MB');
+        return;
+      }
+
+      setAdvertImageFile(file);
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setAdvertImagePreview(reader.result as string);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const handleRemoveImage = () => {
+    setAdvertImageFile(null);
+    setAdvertImagePreview(null);
+    // Also clear from input values
+    setInputValues(prev => ({
+      ...prev,
+      advert: {
+        ...prev.advert,
+        advertImageUrl: ''
+      }
+    }));
+  };
+
   const handleSave = async (): Promise<void> => {
     setLoading(true);
     try {
@@ -284,10 +332,32 @@ const AdminConfiguration: React.FC = () => {
         ...inputValues.config
       };
       
-      const updatedAdvertData = {
+      let updatedAdvertData = {
         ...advertData,
         ...inputValues.advert
       };
+
+      // Handle image upload if a new image was selected
+      if (advertImageFile && activeTab === 'advert') {
+        setUploadingImage(true);
+        try {
+          const imageRef = ref(storage, `advertisements/advert-${Date.now()}.${advertImageFile.name.split('.').pop()}`);
+          await uploadBytes(imageRef, advertImageFile);
+          const downloadURL = await getDownloadURL(imageRef);
+          updatedAdvertData.advertImageUrl = downloadURL;
+          setAdvertImagePreview(downloadURL);
+          setAdvertImageFile(null);
+          toast.success('Image uploaded successfully');
+        } catch (error) {
+          console.error('Error uploading image:', error);
+          toast.error('Failed to upload image');
+          setLoading(false);
+          setUploadingImage(false);
+          return;
+        } finally {
+          setUploadingImage(false);
+        }
+      }
       
       if (activeTab === 'system') {
         const configSnapshot = await getDocs(query(collection(db, 'AdminConfig')));
@@ -516,19 +586,86 @@ const AdminConfiguration: React.FC = () => {
             ) : (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                 <div className="md:col-span-2">
-                  <ConfigField
-                    label="Advertisement Image URL"
-                    name="advertImageUrl"
-                    value={advertData.advertImageUrl}
-                    dataType="advert"
-                    placeholder="https://example.com/image.jpg"
-                    icon={<Image className="w-5 h-5" />}
-                    onChange={handleInputChange}
-                    isEditing={isEditing}
-                    visiblePasswords={visiblePasswords}
-                    togglePasswordVisibility={togglePasswordVisibility}
-                    inputValues={inputValues}
-                  />
+                  <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="flex-shrink-0 mt-1 text-red-500">
+                        <Image className="w-5 h-5" />
+                      </div>
+                      <div className="flex-grow">
+                        <label className="block text-sm font-semibold text-gray-800 mb-2">
+                          Advertisement Image
+                        </label>
+                        
+                        {isEditing ? (
+                          <div className="space-y-3">
+                            {advertImagePreview && (
+                              <div className="relative inline-block">
+                                <img
+                                  src={advertImagePreview}
+                                  alt="Advertisement preview"
+                                  className="max-w-full h-48 object-contain rounded-lg border border-gray-200"
+                                />
+                                <button
+                                  type="button"
+                                  onClick={handleRemoveImage}
+                                  className="absolute top-2 right-2 bg-red-600 text-white rounded-full p-1 hover:bg-red-700 transition"
+                                  title="Remove image"
+                                >
+                                  <Trash2 className="w-4 h-4" />
+                                </button>
+                              </div>
+                            )}
+                            <div className="relative">
+                              <input
+                                type="file"
+                                id="advertImageUpload"
+                                accept="image/*"
+                                onChange={handleImageUpload}
+                                className="hidden"
+                              />
+                              <label
+                                htmlFor="advertImageUpload"
+                                className="flex items-center gap-2 px-4 py-3 bg-gray-50 border border-gray-200 rounded-xl cursor-pointer hover:bg-gray-100 transition-colors"
+                              >
+                                <Upload className="w-5 h-5 text-gray-500" />
+                                <span className="text-sm text-gray-700">
+                                  {advertImageFile ? 'Change Image' : advertImagePreview ? 'Replace Image' : 'Upload Image'}
+                                </span>
+                              </label>
+                              {uploadingImage && (
+                                <div className="mt-2 flex items-center gap-2 text-sm text-gray-600">
+                                  <LoadingSpinner borderColor="#AE1729" width="16px" height="16px" />
+                                  <span>Uploading image...</span>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        ) : (
+                          <div className="flex items-center bg-gray-50 px-4 py-3 rounded-xl">
+                            {advertData.advertImageUrl ? (
+                              <div className="flex items-center gap-3">
+                                <img
+                                  src={advertData.advertImageUrl}
+                                  alt="Advertisement"
+                                  className="h-24 w-auto object-contain rounded border border-gray-200"
+                                />
+                                <a
+                                  href={advertData.advertImageUrl}
+                                  target="_blank"
+                                  rel="noopener noreferrer"
+                                  className="text-sm text-blue-600 hover:underline"
+                                >
+                                  View Image
+                                </a>
+                              </div>
+                            ) : (
+                              <span className="text-gray-400 italic">No image uploaded</span>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <ConfigField
                   label="Contact Email"
