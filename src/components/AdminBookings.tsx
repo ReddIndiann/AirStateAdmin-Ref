@@ -15,6 +15,7 @@ import {
 import { doc, updateDoc } from 'firebase/firestore';
 import { db } from '../firebase/config';
 import { toast } from 'react-hot-toast';
+import axios from 'axios';
 
 // Define types for the Booking and AdminBookings component props
 interface Booking {
@@ -50,13 +51,83 @@ export const AdminBookings: React.FC<AdminBookingsProps> = ({ userBookings, onAp
   const handleApprove = async () => {
     if (selectedBooking) {
       try {
+        // Validate required fields for notification
+        if (!selectedBooking.email || !selectedBooking.phone) {
+          console.error('Cannot send notification - missing required fields:', {
+            email: selectedBooking.email,
+            phone: selectedBooking.phone,
+            name: selectedBooking.name
+          });
+          toast.error('Cannot send notification: Missing email or phone number', {
+            className: 'bg-red-200 text-red-800',
+          });
+          // Still allow approval to proceed
+        }
+
         // Get the reference to the document we want to update
         const bookingRef = doc(db, 'consultancy_bookings', selectedBooking.id);
 
-        // Update the booking status to 'Approved'
+        // Update the booking status to 'Pending Payment'
         await updateDoc(bookingRef, {
           status: 'Pending Payment',
         });
+
+        // Only send notification if we have required fields
+        if (selectedBooking.email && selectedBooking.phone && selectedBooking.name) {
+          // Prepare notification data to send to user - matching Consultancy.tsx structure exactly
+          const bookingData = {
+            clientsname: selectedBooking.name,
+            clientsnumber: selectedBooking.phone,
+            clientEmail: selectedBooking.email,
+            userMessage: `Your Pro - Service appointment has been approved and is now pending payment. Please proceed with payment to confirm your booking.`,
+            adminMessage: `Booking approved: ${selectedBooking.name}'s booking (${selectedBooking.phone}) has been moved to Pending Payment status.`,
+            header: "Pro Services Booking Approval"
+          };
+
+          console.log('Sending notification with data:', bookingData);
+
+          // Send notification to user (non-blocking - don't fail approval if this fails)
+          try {
+            const response = await axios.post(
+              'https://us-central1-airstatefinder.cloudfunctions.net/notifyAdminAndUser',
+              bookingData,
+              {
+                headers: {
+                  'Content-Type': 'application/json',
+                },
+              }
+            );
+            
+            console.log('Notification response status:', response.status);
+            console.log('Notification response data:', response.data);
+            
+            if (response.status === 200) {
+              console.log('✅ Notification sent successfully');
+              toast.success('Notification sent to user', {
+                className: 'bg-green-200 text-green-800',
+              });
+            } else {
+              console.warn('⚠️ Notification API returned non-200 status:', response.status);
+              toast.error(`Booking approved but notification returned status ${response.status}`, {
+                className: 'bg-yellow-200 text-yellow-800',
+              });
+            }
+          } catch (notificationError) {
+            // Log notification error but don't affect approval success
+            console.error('❌ Failed to send notification:', notificationError);
+            if (axios.isAxiosError(notificationError)) {
+              console.error('Error status:', notificationError.response?.status);
+              console.error('Error data:', notificationError.response?.data);
+              console.error('Error message:', notificationError.message);
+              console.error('Full error:', notificationError);
+            }
+            toast.error('Booking approved but notification failed. Check console for details.', {
+              className: 'bg-yellow-200 text-yellow-800',
+            });
+          }
+        } else {
+          console.warn('Skipping notification - missing required fields');
+        }
 
         // Close the modal after the update
         closeModal();
@@ -256,7 +327,7 @@ export const AdminBookings: React.FC<AdminBookingsProps> = ({ userBookings, onAp
                   onClick={handleApprove}
                   className="px-4 py-2 bg-red-500 text-white rounded-lg hover:bg-red-600 flex items-center"
                 >
-                  <CheckIcon className="mr-2 h-4 w-4" /> Approve
+                  <CheckIcon className="mr-2 h-4 w-4" /> Approveeee
                 </button>
               </div>
             </div>
