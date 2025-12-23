@@ -20,6 +20,7 @@ interface SystemConfigData {
   mNotifySenderId: string;
   smsCountWarning: number;
   smsWarningTries: number;
+  paystackApi: string;
 }
 
 interface AdvertData {
@@ -38,6 +39,7 @@ type AllConfigKeys = SystemConfigKey | AdvertDataKey;
 interface VisiblePasswordsState {
   emailServicePass: boolean;
   mNotifyApikey: boolean;
+  paystackApi: boolean;
 }
 
 type InputValuesType = {
@@ -76,6 +78,7 @@ const initialSystemConfig: SystemConfigData = {
   mNotifySenderId: '',
   smsCountWarning: 0,
   smsWarningTries: 0,
+  paystackApi: '',
 };
 
 const initialAdvertData: AdvertData = {
@@ -225,6 +228,7 @@ const AdminConfiguration: React.FC = () => {
   const [visiblePasswords, setVisiblePasswords] = useState<VisiblePasswordsState>({
     emailServicePass: false,
     mNotifyApikey: false,
+    paystackApi: false,
   });
   const [advertImageFile, setAdvertImageFile] = useState<File | null>(null);
   const [advertImagePreview, setAdvertImagePreview] = useState<string | null>(null);
@@ -580,6 +584,20 @@ const AdminConfiguration: React.FC = () => {
                   dataType="config"
                   placeholder="Enter sender ID"
                   icon={<MessageSquare className="w-5 h-5" />}
+                  onChange={handleInputChange}
+                  isEditing={isEditing}
+                  visiblePasswords={visiblePasswords}
+                  togglePasswordVisibility={togglePasswordVisibility}
+                  inputValues={inputValues}
+                />
+                <ConfigField
+                  label="Paystack API"
+                  name="paystackApi"
+                  type="password"
+                  value={configData.paystackApi}
+                  dataType="config"
+                  placeholder="Enter Paystack API key"
+                  icon={<Key className="w-5 h-5" />}
                   onChange={handleInputChange}
                   isEditing={isEditing}
                   visiblePasswords={visiblePasswords}
