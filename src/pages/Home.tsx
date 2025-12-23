@@ -21,6 +21,9 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import { fetchRequests, fetchConsultancy } from '../lib/newHomeUtils';
 import RequestDetailModal from '../components/RequestDetailModal';
 import { getMNotifyBalances, MNotifyBalance } from '../lib/mNotifyUtil';
+import ResponseModal from '../components/ResponseModal';
+import { collection, getDocs, query } from 'firebase/firestore';
+import { db } from '../firebase/config';
 
 export default function Home() {
   const navigate = useNavigate();
@@ -35,6 +38,8 @@ export default function Home() {
     smsBonus: null,
     voiceBalance: null
   });
+  const [smsCountWarning, setSmsCountWarning] = useState<number | null>(null);
+  const [showSmsWarningModal, setShowSmsWarningModal] = useState(false);
 
  
   const rowsPerPage = 4;
@@ -103,11 +108,39 @@ export default function Home() {
         console.error('Error loading mNotify balances:', error);
       }
     };
+
+    const loadSmsCountWarning = async () => {
+      try {
+        const configSnapshot = await getDocs(query(collection(db, 'AdminConfig')));
+        if (!configSnapshot.empty) {
+          const firstDoc = configSnapshot.docs[0];
+          const data = firstDoc.data();
+          const warningThreshold = data.smsCountWarning;
+          if (warningThreshold !== undefined && warningThreshold !== null) {
+            setSmsCountWarning(warningThreshold);
+          }
+        }
+      } catch (error) {
+        console.error('Error loading SMS count warning:', error);
+      }
+    };
     
     loadRequestsData();
     loadConsultancyData();
     loadMNotifyBalances();
+    loadSmsCountWarning();
   }, []);
+
+  // Check SMS balance against warning threshold
+  useEffect(() => {
+    if (
+      mNotifyBalances.smsBalance !== null && 
+      smsCountWarning !== null && 
+      mNotifyBalances.smsBalance < smsCountWarning
+    ) {
+      setShowSmsWarningModal(true);
+    }
+  }, [mNotifyBalances.smsBalance, smsCountWarning]);
 
   // Pagination handlers
   const paginatedRequests = requests.slice(
@@ -426,6 +459,14 @@ export default function Home() {
           onClose={() => setSelectedRequest(null)}
         />
       )}
+
+      {/* SMS Warning Modal */}
+      <ResponseModal
+        isOpen={showSmsWarningModal}
+        onClose={() => setShowSmsWarningModal(false)}
+        type="warning"
+        message={`Your SMS balance (${mNotifyBalances.smsBalance?.toLocaleString() || 'N/A'}) is below the warning threshold of ${smsCountWarning?.toLocaleString() || 'N/A'}. Please top up your SMS balance to ensure uninterrupted service.`}
+      />
     </div>
   );
 }

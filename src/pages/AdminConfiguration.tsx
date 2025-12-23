@@ -5,7 +5,7 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { toast } from 'react-hot-toast';
 import { 
   Eye, EyeOff, Edit2, X, Save, Settings, FileText, 
-  DollarSign, Mail, Phone, Key, User, MessageSquare, MapPin, Image, Upload, Trash2
+  DollarSign, Mail, Phone, Key, User, MessageSquare, MapPin, Image, Upload, Trash2, AlertTriangle
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 
@@ -18,6 +18,8 @@ interface SystemConfigData {
   emailServicePass: string;
   mNotifyApikey: string;
   mNotifySenderId: string;
+  smsCountWarning: number;
+  smsWarningTries: number;
 }
 
 interface AdvertData {
@@ -72,6 +74,8 @@ const initialSystemConfig: SystemConfigData = {
   emailServicePass: '',
   mNotifyApikey: '',
   mNotifySenderId: '',
+  smsCountWarning: 0,
+  smsWarningTries: 0,
 };
 
 const initialAdvertData: AdvertData = {
@@ -576,6 +580,34 @@ const AdminConfiguration: React.FC = () => {
                   dataType="config"
                   placeholder="Enter sender ID"
                   icon={<MessageSquare className="w-5 h-5" />}
+                  onChange={handleInputChange}
+                  isEditing={isEditing}
+                  visiblePasswords={visiblePasswords}
+                  togglePasswordVisibility={togglePasswordVisibility}
+                  inputValues={inputValues}
+                />
+                <ConfigField
+                  label="SMS Count Warning"
+                  name="smsCountWarning"
+                  type="number"
+                  value={configData.smsCountWarning}
+                  dataType="config"
+                  placeholder="Enter SMS count warning threshold"
+                  icon={<AlertTriangle className="w-5 h-5" />}
+                  onChange={handleInputChange}
+                  isEditing={isEditing}
+                  visiblePasswords={visiblePasswords}
+                  togglePasswordVisibility={togglePasswordVisibility}
+                  inputValues={inputValues}
+                />
+                <ConfigField
+                  label="SMS Warning Tries"
+                  name="smsWarningTries"
+                  type="number"
+                  value={configData.smsWarningTries}
+                  dataType="config"
+                  placeholder="Enter SMS warning tries count"
+                  icon={<AlertTriangle className="w-5 h-5" />}
                   onChange={handleInputChange}
                   isEditing={isEditing}
                   visiblePasswords={visiblePasswords}
