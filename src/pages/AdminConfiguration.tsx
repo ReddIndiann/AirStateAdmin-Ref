@@ -5,12 +5,13 @@ import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { toast } from 'react-hot-toast';
 import { 
   Eye, EyeOff, Edit2, X, Save, Settings, FileText, 
-  DollarSign, Mail, Phone, Key, User, MessageSquare, MapPin, Image, Upload, Trash2, AlertTriangle
+  DollarSign, Mail, Phone, Key, User, MessageSquare, MapPin, Image, Upload, Trash2, AlertTriangle, Wrench
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
 
 // Define TypeScript interfaces
 interface SystemConfigData {
+  maintenanceMode: boolean;
   ConsultancyAmount: number;
   ContactEmail: string;
   contactNumber: string;
@@ -20,7 +21,8 @@ interface SystemConfigData {
   mNotifySenderId: string;
   smsCountWarning: number;
   smsWarningTries: number;
-  paystackApi: string;
+  paystackPublicApiKey: string;
+  fileUploadLimit: number;
 }
 
 interface AdvertData {
@@ -69,6 +71,7 @@ interface ModalProps {
 }
 
 const initialSystemConfig: SystemConfigData = {
+  maintenanceMode: false,
   ConsultancyAmount: 0,
   ContactEmail: '',
   contactNumber: '',
@@ -78,7 +81,8 @@ const initialSystemConfig: SystemConfigData = {
   mNotifySenderId: '',
   smsCountWarning: 0,
   smsWarningTries: 0,
-  paystackApi: '',
+  paystackPublicApiKey: '',
+  fileUploadLimit: 0,
 };
 
 const initialAdvertData: AdvertData = {
@@ -261,7 +265,12 @@ const AdminConfiguration: React.FC = () => {
       if (!configSnapshot.empty) {
         const firstDoc = configSnapshot.docs[0];
         const data = firstDoc.data() as SystemConfigData;
-        setConfigData(data);
+        // Ensure maintenanceMode defaults to false if not present
+        setConfigData({
+          ...initialSystemConfig,
+          ...data,
+          maintenanceMode: data.maintenanceMode ?? false
+        });
       }
 
       const advertSnapshot = await getDocs(query(collection(db, 'AdvertandContact')));
@@ -292,6 +301,19 @@ const AdminConfiguration: React.FC = () => {
         }
       }));
     }, 
+    []
+  );
+
+  const handleToggleChange = useCallback(
+    (name: string, checked: boolean, dataType: keyof InputValuesType): void => {
+      setInputValues(prev => ({
+        ...prev,
+        [dataType]: {
+          ...prev[dataType],
+          [name]: checked
+        }
+      }));
+    },
     []
   );
 
@@ -409,6 +431,116 @@ const AdminConfiguration: React.FC = () => {
     toast.success('Edits cancelled');
   }, []);
 
+  // Function to get changed fields
+  const getChangedFields = useCallback((): Array<{ label: string; oldValue: string | number | boolean; newValue: string | number | boolean }> => {
+    const changes: Array<{ label: string; oldValue: string | number | boolean; newValue: string | number | boolean }> = [];
+    
+    if (activeTab === 'system') {
+      const currentData = configData;
+      const newData = inputValues.config;
+      
+      // Field labels mapping
+      const fieldLabels: Record<string, string> = {
+        maintenanceMode: 'Maintenance Mode',
+        ConsultancyAmount: 'Consultancy Amount',
+        ContactEmail: 'Contact Email',
+        contactNumber: 'Contact Number',
+        eMailServiceUser: 'Email Service User',
+        emailServicePass: 'Email Service Password',
+        mNotifyApikey: 'mNotify API Key',
+        mNotifySenderId: 'mNotify Sender ID',
+        smsCountWarning: 'SMS Count Warning',
+        smsWarningTries: 'SMS Warning Tries',
+        paystackPublicApiKey: 'Paystack Public API Key',
+        fileUploadLimit: 'File Upload Limit',
+      };
+
+      Object.keys(newData).forEach((key) => {
+        const typedKey = key as keyof SystemConfigData;
+        const oldValue = currentData[typedKey];
+        const newValue = newData[typedKey];
+        
+        // Compare values (handle different types)
+        if (oldValue !== undefined && newValue !== undefined) {
+          const oldVal = oldValue;
+          const newVal = newValue;
+          
+          // Check if value actually changed
+          if (oldVal !== newVal) {
+            // Format values for display
+            let displayOldValue: string | number | boolean = oldVal;
+            let displayNewValue: string | number | boolean = newVal;
+            
+            // Handle password fields - show masked values
+            if (key === 'emailServicePass' || key === 'mNotifyApikey' || key === 'paystackPublicApiKey') {
+              displayOldValue = oldVal ? '••••••••' : 'Not set';
+              displayNewValue = newVal ? '••••••••' : 'Not set';
+            } else if (typeof oldVal === 'boolean') {
+              displayOldValue = oldVal ? 'Enabled' : 'Disabled';
+              displayNewValue = newVal ? 'Enabled' : 'Disabled';
+            }
+            
+            changes.push({
+              label: fieldLabels[key] || key,
+              oldValue: displayOldValue,
+              newValue: displayNewValue
+            });
+          }
+        }
+      });
+    } else {
+      const currentData = advertData;
+      const newData = inputValues.advert;
+      
+      // Field labels mapping
+      const fieldLabels: Record<string, string> = {
+        advertImageUrl: 'Advertisement Image',
+        contactAddress: 'Contact Address',
+        contactEmail: 'Contact Email',
+        contactHeading: 'Contact Heading',
+        description: 'Description',
+        headline: 'Headline',
+      };
+
+      Object.keys(newData).forEach((key) => {
+        const typedKey = key as keyof AdvertData;
+        const oldValue = currentData[typedKey];
+        const newValue = newData[typedKey];
+        
+        if (oldValue !== undefined && newValue !== undefined && oldValue !== newValue) {
+          let displayOldValue: string = oldValue || 'Not set';
+          let displayNewValue: string = newValue || 'Not set';
+          
+          // Handle image URL - show "Changed" instead of full URL
+          if (key === 'advertImageUrl' && (advertImageFile || (oldValue !== newValue && newValue))) {
+            displayOldValue = oldValue ? 'Current image' : 'No image';
+            displayNewValue = advertImageFile ? 'New image uploaded' : (newValue ? 'Updated' : 'Not set');
+          }
+          
+          changes.push({
+            label: fieldLabels[key] || key,
+            oldValue: displayOldValue,
+            newValue: displayNewValue
+          });
+        }
+      });
+      
+      // Check if image was uploaded
+      if (advertImageFile) {
+        const existingChange = changes.find(c => c.label === 'Advertisement Image');
+        if (!existingChange) {
+          changes.push({
+            label: 'Advertisement Image',
+            oldValue: advertData.advertImageUrl ? 'Current image' : 'No image',
+            newValue: 'New image uploaded'
+          });
+        }
+      }
+    }
+    
+    return changes;
+  }, [activeTab, configData, advertData, inputValues, advertImageFile]);
+
   if (loading) {
     return (
       <div className="flex justify-center items-center h-screen bg-gray-50">
@@ -494,6 +626,53 @@ const AdminConfiguration: React.FC = () => {
           <div className="p-8">
             {activeTab === 'system' ? (
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* Maintenance Mode Toggle - Full Width */}
+                <div className="md:col-span-2">
+                  <div className="bg-white rounded-xl p-5 border border-gray-100 shadow-sm transition-all hover:shadow-md">
+                    <div className="flex items-start gap-3">
+                      <div className="flex-shrink-0 mt-1 text-red-500">
+                        <Wrench className="w-5 h-5" />
+                      </div>
+                      <div className="flex-grow">
+                        <label className="block text-sm font-semibold text-gray-800 mb-3">
+                          Maintenance Mode
+                        </label>
+                        {isEditing ? (
+                          <div className="flex items-center gap-3">
+                            <label className="relative inline-flex items-center cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={inputValues.config.maintenanceMode ?? configData.maintenanceMode ?? false}
+                                onChange={(e) => handleToggleChange('maintenanceMode', e.target.checked, 'config')}
+                                className="sr-only peer"
+                              />
+                              <div className="w-14 h-7 bg-gray-200 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-red-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-6 after:w-6 after:transition-all peer-checked:bg-red-600"></div>
+                            </label>
+                            <span className="text-sm text-gray-600">
+                              {inputValues.config.maintenanceMode ?? configData.maintenanceMode ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-3">
+                            <div className={`w-14 h-7 rounded-full flex items-center ${
+                              configData.maintenanceMode ? 'bg-red-600 justify-end' : 'bg-gray-200 justify-start'
+                            }`}>
+                              <div className="w-6 h-6 bg-white rounded-full mx-1"></div>
+                            </div>
+                            <span className={`text-sm font-medium ${
+                              configData.maintenanceMode ? 'text-red-600' : 'text-gray-600'
+                            }`}>
+                              {configData.maintenanceMode ? 'Enabled' : 'Disabled'}
+                            </span>
+                          </div>
+                        )}
+                        <p className="text-xs text-gray-500 mt-2">
+                          When enabled, the system will be in maintenance mode and may restrict certain features.
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 <ConfigField
                   label="Consultancy Amount"
                   name="ConsultancyAmount"
@@ -591,12 +770,12 @@ const AdminConfiguration: React.FC = () => {
                   inputValues={inputValues}
                 />
                 <ConfigField
-                  label="Paystack API"
-                  name="paystackApi"
+                  label="Paystack Public API Key"
+                  name="paystackPublicApiKey"
                   type="password"
-                  value={configData.paystackApi}
+                  value={configData.paystackPublicApiKey}
                   dataType="config"
-                  placeholder="Enter Paystack API key"
+                  placeholder="Enter Paystack Public API key"
                   icon={<Key className="w-5 h-5" />}
                   onChange={handleInputChange}
                   isEditing={isEditing}
@@ -626,6 +805,20 @@ const AdminConfiguration: React.FC = () => {
                   dataType="config"
                   placeholder="Enter SMS warning tries count"
                   icon={<AlertTriangle className="w-5 h-5" />}
+                  onChange={handleInputChange}
+                  isEditing={isEditing}
+                  visiblePasswords={visiblePasswords}
+                  togglePasswordVisibility={togglePasswordVisibility}
+                  inputValues={inputValues}
+                />
+                <ConfigField
+                  label="File Upload Limit"
+                  name="fileUploadLimit"
+                  type="number"
+                  value={configData.fileUploadLimit}
+                  dataType="config"
+                  placeholder="Enter max upload size (e.g., MB)"
+                  icon={<Upload className="w-5 h-5" />}
                   onChange={handleInputChange}
                   isEditing={isEditing}
                   visiblePasswords={visiblePasswords}
@@ -818,9 +1011,48 @@ const AdminConfiguration: React.FC = () => {
           <div className="py-2 px-3 bg-red-50 border-l-4 border-red-500 rounded text-red-800 my-4">
             This action will update your system configuration settings.
           </div>
-          <p className="text-gray-600">
-            Are you sure you want to save these changes? This will affect how your system operates.
-          </p>
+          
+          {/* List of Changed Fields */}
+          {getChangedFields().length > 0 ? (
+            <div className="bg-gray-50 rounded-lg p-4 border border-gray-200">
+              <h4 className="text-sm font-semibold text-gray-700 mb-3">
+                Fields to be updated ({getChangedFields().length}):
+              </h4>
+              <div className="space-y-2 max-h-64 overflow-y-auto">
+                {getChangedFields().map((change, index) => (
+                  <div key={index} className="bg-white rounded-lg p-3 border border-gray-200">
+                    <div className="text-sm font-medium text-gray-800 mb-2">
+                      {change.label}
+                    </div>
+                    <div className="flex items-start gap-4 text-xs">
+                      <div className="flex-1">
+                        <span className="text-gray-500">Current:</span>
+                        <div className="text-gray-700 mt-1 break-words">
+                          {typeof change.oldValue === 'string' && change.oldValue.length > 50 
+                            ? `${change.oldValue.substring(0, 50)}...` 
+                            : String(change.oldValue)}
+                        </div>
+                      </div>
+                      <div className="flex-shrink-0 text-gray-400">→</div>
+                      <div className="flex-1">
+                        <span className="text-gray-500">New:</span>
+                        <div className="text-red-600 font-medium mt-1 break-words">
+                          {typeof change.newValue === 'string' && change.newValue.length > 50 
+                            ? `${change.newValue.substring(0, 50)}...` 
+                            : String(change.newValue)}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : (
+            <p className="text-gray-600">
+              Are you sure you want to save these changes? This will affect how your system operates.
+            </p>
+          )}
+          
           <div className="flex justify-end gap-3 mt-6">
             <button
               onClick={() => setShowConfirmModal(false)}

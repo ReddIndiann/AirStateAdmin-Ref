@@ -5,7 +5,7 @@ import { db } from '../firebase/config';
 import {collection,query,orderBy,onSnapshot,addDoc,where,serverTimestamp, getDocs, updateDoc, doc} from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import UserBookings from '../components/UserBookings';
-import { Calendar, Clock, Trash2, Plus, Check, X, List } from 'lucide-react';
+import { Calendar, Clock, Trash2, Plus, Check, X, List, ArrowUp, ArrowDown } from 'lucide-react';
 
 import { UserBooking } from '../types';
 
@@ -24,6 +24,10 @@ const Consultancy: React.FC = () => {
   
   // State for admin-cancelled slots
   const [adminCancelledSlots, setAdminCancelledSlots] = useState<UserBooking[]>([]);
+  
+  // State for booking sorting
+  const [sortBy, setSortBy] = useState<'created' | 'booked' | null>(null);
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const upcomingAdminCancelledSlots = useMemo(() => {
     const now = Date.now();
@@ -34,6 +38,42 @@ const Consultancy: React.FC = () => {
       return slot.selectedSlot.getTime() >= now;
     });
   }, [adminCancelledSlots]);
+
+  // Sort user bookings based on selected sort option
+  const sortedUserBookings = useMemo(() => {
+    let sorted = [...userBookings];
+
+    if (sortBy === 'created') {
+      sorted.sort((a, b) => {
+        const dateA = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt);
+        const dateB = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt);
+        return sortOrder === 'asc' 
+          ? dateA.getTime() - dateB.getTime()
+          : dateB.getTime() - dateA.getTime();
+      });
+    } else if (sortBy === 'booked') {
+      sorted.sort((a, b) => {
+        const dateA = a.selectedSlot.getTime();
+        const dateB = b.selectedSlot.getTime();
+        return sortOrder === 'asc'
+          ? dateA - dateB
+          : dateB - dateA;
+      });
+    }
+
+    return sorted;
+  }, [userBookings, sortBy, sortOrder]);
+
+  const handleSortToggle = (type: 'created' | 'booked') => {
+    if (sortBy === type) {
+      // Toggle order if same type
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      // Set new sort type with default descending order
+      setSortBy(type);
+      setSortOrder('desc');
+    }
+  };
 
   useEffect(() => {
     const auth = getAuth();
@@ -476,10 +516,85 @@ const Consultancy: React.FC = () => {
 
         {/* Active Bookings Section */}
         <div className="bg-white rounded-lg shadow-sm border p-6 mt-8">
-          <h2 className="text-xl font-semibold mb-4">Active User Bookings</h2>
-          <p className="text-sm text-gray-600 mb-6">These are the confirmed consultation bookings from users</p>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="text-xl font-semibold">Active User Bookings</h2>
+              <p className="text-sm text-gray-600 mt-1">
+                {sortedUserBookings.length} booking{sortedUserBookings.length !== 1 ? 's' : ''} found
+              </p>
+            </div>
+          </div>
+
+          {/* Sort Toggles */}
+          <div className="mb-6 p-4 bg-gray-50 rounded-lg border border-gray-200">
+            <h3 className="text-sm font-semibold text-gray-700 mb-3">Sort By</h3>
+            
+            <div className="flex flex-wrap gap-3">
+              {/* Date Created Sort Toggle */}
+              <button
+                onClick={() => handleSortToggle('created')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                  sortBy === 'created'
+                    ? 'bg-[#AE1729] text-white border-[#AE1729]'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                <Calendar className="w-4 h-4" />
+                <span className="text-sm font-medium">Date Created</span>
+                {sortBy === 'created' && (
+                  sortOrder === 'asc' ? (
+                    <ArrowUp className="w-4 h-4" />
+                  ) : (
+                    <ArrowDown className="w-4 h-4" />
+                  )
+                )}
+              </button>
+
+              {/* Date Booked For Sort Toggle */}
+              <button
+                onClick={() => handleSortToggle('booked')}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg border transition-colors ${
+                  sortBy === 'booked'
+                    ? 'bg-[#AE1729] text-white border-[#AE1729]'
+                    : 'bg-white text-gray-700 border-gray-300 hover:bg-gray-100'
+                }`}
+              >
+                <Clock className="w-4 h-4" />
+                <span className="text-sm font-medium">Date Booked For</span>
+                {sortBy === 'booked' && (
+                  sortOrder === 'asc' ? (
+                    <ArrowUp className="w-4 h-4" />
+                  ) : (
+                    <ArrowDown className="w-4 h-4" />
+                  )
+                )}
+              </button>
+
+              {/* Clear Sort Button */}
+              {sortBy && (
+                <button
+                  onClick={() => {
+                    setSortBy(null);
+                    setSortOrder('desc');
+                  }}
+                  className="flex items-center gap-2 px-4 py-2 rounded-lg border bg-white text-gray-700 border-gray-300 hover:bg-gray-100 transition-colors"
+                >
+                  <X className="w-4 h-4" />
+                  <span className="text-sm font-medium">Clear Sort</span>
+                </button>
+              )}
+            </div>
+
+            {sortBy && (
+              <p className="text-xs text-gray-500 mt-3">
+                Sorting by <span className="font-medium">{sortBy === 'created' ? 'Date Created' : 'Date Booked For'}</span> in{' '}
+                <span className="font-medium">{sortOrder === 'asc' ? 'Ascending' : 'Descending'}</span> order
+              </p>
+            )}
+          </div>
+
           <div className="overflow-auto">
-            <UserBookings userBookings={userBookings} />
+            <UserBookings userBookings={sortedUserBookings} />
           </div>
         </div>
 

@@ -4,12 +4,14 @@ import { NavLink, useNavigate } from "react-router-dom";
 import { IoExitOutline, IoSettingsOutline, IoChevronDownOutline, IoChevronForwardOutline } from "react-icons/io5";
 import { MdSupportAgent, MdOutlineBusinessCenter, MdOutlineDocumentScanner } from "react-icons/md";
 import { FaUser } from "react-icons/fa";
+import { AlertTriangle } from 'lucide-react';
 
 import { RiHistoryFill } from "react-icons/ri";
 import { RxDashboard } from "react-icons/rx";
 import { signOut } from 'firebase/auth';
-import { auth, storage } from '../firebase/config';
+import { auth, storage, db } from '../firebase/config';
 import { ref, getDownloadURL } from "firebase/storage";
+import { collection, getDocs, query } from 'firebase/firestore';
 import { toast } from 'react-hot-toast';
 import { useUser } from "../Context/AuthContext";
 import logo from "../assets/logo.svg";
@@ -212,6 +214,7 @@ const DefaultLayout: React.FC<DefaultLayoutProps> = ({ children }) => {
   const [name, setName] = useState('');
   const [profileImage, setProfileImage] = useState<string | null>(null);
   const [dropdownOpen, setDropdownOpen] = useState(false);
+  const [maintenanceMode, setMaintenanceMode] = useState(false);
   const { logout } = useUser();
   const navigate = useNavigate();
   const dropdownRef = useRef<HTMLDivElement | null>(null);
@@ -267,6 +270,27 @@ const DefaultLayout: React.FC<DefaultLayoutProps> = ({ children }) => {
     loadProfilePicture();
   }, []);
 
+  useEffect(() => {
+    const fetchMaintenanceMode = async () => {
+      try {
+        const configSnapshot = await getDocs(query(collection(db, 'AdminConfig')));
+        if (!configSnapshot.empty) {
+          const firstDoc = configSnapshot.docs[0];
+          const data = firstDoc.data();
+          setMaintenanceMode(data.maintenanceMode || false);
+        }
+      } catch (error) {
+        console.error('Error fetching maintenance mode:', error);
+      }
+    };
+
+    fetchMaintenanceMode();
+    
+    // Check for maintenance mode updates every 30 seconds
+    const interval = setInterval(fetchMaintenanceMode, 30000);
+    return () => clearInterval(interval);
+  }, []);
+
   const handleSignOut = async () => {
     try {
       await signOut(auth);
@@ -294,8 +318,18 @@ const DefaultLayout: React.FC<DefaultLayoutProps> = ({ children }) => {
 
   return (
     <div className="flex flex-col w-full h-screen bg-gray-200 overflow-hidden">
+      {/* Maintenance Mode Banner */}
+      {maintenanceMode && (
+        <div className="fixed top-0 left-0 right-0 bg-yellow-500 text-white px-4 py-3 z-[60] flex items-center justify-center gap-2 shadow-md">
+          <AlertTriangle className="w-5 h-5" />
+          <span className="font-semibold text-sm md:text-base">System Maintenance Mode is Active</span>
+        </div>
+      )}
+      
       {/* Header */}
-      <header className="fixed bg-white w-full h-20 flex items-center justify-between px-8 py-4 z-50">
+      <header 
+        className={`fixed bg-white w-full h-20 flex items-center justify-between px-8 py-4 z-50 ${maintenanceMode ? 'top-[44px]' : 'top-0'}`}
+      >
         {/* Header Content */}
         <div className="flex items-center justify-between">
           {/* Hamburger for mobile */}
@@ -374,10 +408,11 @@ const DefaultLayout: React.FC<DefaultLayoutProps> = ({ children }) => {
       </header>
     
       {/* Main Layout */}
-      <div className="flex flex-row pt-20 h-full">
+      <div className={`flex flex-row h-full ${maintenanceMode ? 'pt-[124px]' : 'pt-20'}`}>
         {/* Side Panel */}
         <aside
-          className={`fixed top-20 left-0 py-5 ${isCollapsed ? "w-20" : "w-64"} h-full bg-white shadow-md z-40 hidden md:block`}
+          className={`fixed left-0 py-5 ${isCollapsed ? "w-20" : "w-64"} bg-white shadow-md z-40 hidden md:block ${maintenanceMode ? 'top-[124px]' : 'top-20'}`}
+          style={{ height: maintenanceMode ? 'calc(100vh - 124px)' : 'calc(100vh - 80px)' }}
         >
           <nav className="flex flex-col h-full justify-between">
             {/* Top Navigation Items */}
