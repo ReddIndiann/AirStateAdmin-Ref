@@ -19,6 +19,7 @@ const ConsultancyList: React.FC = () => {
     startDate: '',
     endDate: ''
   });
+  const [dateFilterType, setDateFilterType] = useState<'created' | 'booked'>('booked');
   const [statusFilter, setStatusFilter] = useState<'all' | 'active' | 'cancelled'>('all');
   const [showFilters, setShowFilters] = useState(false);
   const [currentPage, setCurrentPage] = useState(0);
@@ -43,11 +44,15 @@ const ConsultancyList: React.FC = () => {
     const unsubscribe = onSnapshot(
       bookingsQuery,
       (snapshot) => {
-        const bookings = snapshot.docs.map((doc) => ({
-          id: doc.id,
-          ...doc.data(),
-          selectedSlot: doc.data().selectedSlot.toDate(),
-        })) as UserBooking[];
+        const bookings = snapshot.docs.map((doc) => {
+          const data = doc.data();
+          return {
+            id: doc.id,
+            ...data,
+            selectedSlot: data.selectedSlot.toDate(),
+            createdAt: data.createdAt?.toDate ? data.createdAt.toDate() : (data.createdAt || new Date()),
+          };
+        }) as UserBooking[];
 
         setConsultancyBookings(bookings);
       },
@@ -64,15 +69,6 @@ const ConsultancyList: React.FC = () => {
   useEffect(() => {
     let filtered = [...consultancyBookings];
 
-    // Exclude past days (only show days that haven't passed)
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-    filtered = filtered.filter((booking) => {
-      const bookingDay = new Date(booking.selectedSlot);
-      bookingDay.setHours(0, 0, 0, 0);
-      return bookingDay.getTime() >= today.getTime();
-    });
-
     // Apply status filter
     if (statusFilter === 'active') {
       filtered = filtered.filter(booking => !booking.AdminCancelled);
@@ -80,39 +76,90 @@ const ConsultancyList: React.FC = () => {
       filtered = filtered.filter(booking => booking.AdminCancelled);
     }
 
-    // Apply date range filter
+    // Apply date range filter based on selected filter type
     if (dateRange.startDate || dateRange.endDate) {
       filtered = filtered.filter(booking => {
-        const bookingDate = new Date(booking.selectedSlot);
+        let dateToFilter: Date;
+        
+        if (dateFilterType === 'created') {
+          // Filter by createdAt (date created)
+          const createdAt = booking.createdAt;
+          if (createdAt instanceof Date) {
+            dateToFilter = createdAt;
+          } else if (createdAt && typeof (createdAt as any).toDate === 'function') {
+            dateToFilter = (createdAt as any).toDate();
+          } else {
+            return true; // Skip if createdAt is not available
+          }
+        } else {
+          // Filter by selectedSlot (date booked)
+          dateToFilter = booking.selectedSlot instanceof Date 
+            ? booking.selectedSlot 
+            : new Date(booking.selectedSlot);
+        }
+        
+        // Reset time to start of day for comparison
+        const filterDate = new Date(dateToFilter);
+        filterDate.setHours(0, 0, 0, 0);
+        
         const startDate = dateRange.startDate ? new Date(dateRange.startDate) : null;
         const endDate = dateRange.endDate ? new Date(dateRange.endDate) : null;
+        
+        if (startDate) startDate.setHours(0, 0, 0, 0);
+        if (endDate) {
+          endDate.setHours(23, 59, 59, 999); // Include the entire end date
+        }
 
         if (startDate && endDate) {
-          return bookingDate >= startDate && bookingDate <= endDate;
+          return filterDate >= startDate && filterDate <= endDate;
         } else if (startDate) {
-          return bookingDate >= startDate;
+          return filterDate >= startDate;
         } else if (endDate) {
-          return bookingDate <= endDate;
+          return filterDate <= endDate;
         }
         return true;
       });
     }
 
-    // Apply sorting
+    // Apply sorting based on selected filter type
     filtered.sort((a, b) => {
-      const dateA = new Date(a.selectedSlot);
-      const dateB = new Date(b.selectedSlot);
+      let dateA: Date;
+      let dateB: Date;
+      
+      if (dateFilterType === 'created') {
+        const createdAtA = a.createdAt;
+        const createdAtB = b.createdAt;
+        dateA = createdAtA instanceof Date 
+          ? createdAtA 
+          : (createdAtA && typeof (createdAtA as any).toDate === 'function')
+            ? (createdAtA as any).toDate()
+            : new Date(0);
+        dateB = createdAtB instanceof Date 
+          ? createdAtB 
+          : (createdAtB && typeof (createdAtB as any).toDate === 'function')
+            ? (createdAtB as any).toDate()
+            : new Date(0);
+      } else {
+        dateA = a.selectedSlot instanceof Date 
+          ? a.selectedSlot 
+          : new Date(a.selectedSlot);
+        dateB = b.selectedSlot instanceof Date 
+          ? b.selectedSlot 
+          : new Date(b.selectedSlot);
+      }
+      
       return sortOrder === 'asc' ? dateA.getTime() - dateB.getTime() : dateB.getTime() - dateA.getTime();
     });
 
     setFilteredBookings(filtered);
     setCurrentPage(0); // Reset to first page when filters change
-  }, [consultancyBookings, sortOrder, dateRange, statusFilter]);
+  }, [consultancyBookings, sortOrder, dateRange, statusFilter, dateFilterType]);
 
   const clearFilters = () => {
     setDateRange({ startDate: '', endDate: '' });
     setStatusFilter('all');
     setSortOrder('desc');
+    setDateFilterType('booked');
   };
 
   const restoreCancelledSlot = async (slotId: string) => {
@@ -242,7 +289,7 @@ const ConsultancyList: React.FC = () => {
             </div>
           </div>
 
-          {(dateRange.startDate || dateRange.endDate || statusFilter !== 'all') && (
+          {(dateRange.startDate || dateRange.endDate || statusFilter !== 'all' || dateFilterType !== 'booked') && (
             <button
               onClick={clearFilters}
               className="px-3 py-1 text-sm text-red-600 hover:text-red-700 transition-colors"
@@ -255,7 +302,7 @@ const ConsultancyList: React.FC = () => {
         {/* Filter Panel */}
         {showFilters && (
           <div className="mb-4 p-4 bg-gray-50 rounded-lg border">
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <div>
                 <label className="block text-xs text-gray-600 mb-1">Status</label>
                 <select
@@ -269,7 +316,20 @@ const ConsultancyList: React.FC = () => {
                 </select>
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">Start Date</label>
+                <label className="block text-xs text-gray-600 mb-1">Filter By Date</label>
+                <select
+                  value={dateFilterType}
+                  onChange={(e) => setDateFilterType(e.target.value as 'created' | 'booked')}
+                  className="w-full px-3 py-2 text-sm border rounded-md focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <option value="booked">Date Booked</option>
+                  <option value="created">Date Created</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs text-gray-600 mb-1">
+                  Start Date ({dateFilterType === 'created' ? 'Created' : 'Booked'})
+                </label>
                 <input
                   type="date"
                   value={dateRange.startDate}
@@ -278,7 +338,9 @@ const ConsultancyList: React.FC = () => {
                 />
               </div>
               <div>
-                <label className="block text-xs text-gray-600 mb-1">End Date</label>
+                <label className="block text-xs text-gray-600 mb-1">
+                  End Date ({dateFilterType === 'created' ? 'Created' : 'Booked'})
+                </label>
                 <input
                   type="date"
                   value={dateRange.endDate}
@@ -298,6 +360,9 @@ const ConsultancyList: React.FC = () => {
                 <tr>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Client Details
+                  </th>
+                  <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                    Date Created
                   </th>
                   <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                     Consultation Date & Time
@@ -331,23 +396,56 @@ const ConsultancyList: React.FC = () => {
                         </div>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
+                        <div className="text-sm text-gray-900">
+                          {booking.createdAt && booking.createdAt instanceof Date
+                            ? booking.createdAt.toLocaleDateString('en-US', {
+                                month: 'short',
+                                day: 'numeric',
+                                year: 'numeric'
+                              })
+                            : 'N/A'}
+                        </div>
+                        <div className="text-xs text-gray-500">
+                          {booking.createdAt && booking.createdAt instanceof Date
+                            ? booking.createdAt.toLocaleTimeString('en-US', {
+                                hour: '2-digit',
+                                minute: '2-digit',
+                                hour12: true
+                              })
+                            : ''}
+                        </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
                         <div className="flex items-center">
                           <Calendar className="w-4 h-4 text-gray-400 mr-2" />
                           <div>
                             <div className="text-sm font-medium text-gray-900">
-                              {booking.selectedSlot.toLocaleDateString('en-US', { 
-                                weekday: 'short',
-                                month: 'short', 
-                                day: 'numeric',
-                                year: 'numeric'
-                              })}
+                              {booking.selectedSlot instanceof Date
+                                ? booking.selectedSlot.toLocaleDateString('en-US', { 
+                                    weekday: 'short',
+                                    month: 'short', 
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })
+                                : new Date(booking.selectedSlot).toLocaleDateString('en-US', {
+                                    weekday: 'short',
+                                    month: 'short',
+                                    day: 'numeric',
+                                    year: 'numeric'
+                                  })}
                             </div>
                             <div className="text-sm text-gray-500">
-                              {booking.selectedSlot.toLocaleTimeString('en-US', { 
-                                hour: '2-digit', 
-                                minute: '2-digit',
-                                hour12: true
-                              })}
+                              {booking.selectedSlot instanceof Date
+                                ? booking.selectedSlot.toLocaleTimeString('en-US', { 
+                                    hour: '2-digit', 
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })
+                                : new Date(booking.selectedSlot).toLocaleTimeString('en-US', {
+                                    hour: '2-digit',
+                                    minute: '2-digit',
+                                    hour12: true
+                                  })}
                             </div>
                           </div>
                         </div>
@@ -391,7 +489,7 @@ const ConsultancyList: React.FC = () => {
                   ))
                 ) : (
                   <tr>
-                    <td colSpan={5} className="px-6 py-12 text-center text-gray-500">
+                    <td colSpan={6} className="px-6 py-12 text-center text-gray-500">
                       <Clock className="w-12 h-12 mx-auto mb-4 opacity-50" />
                       <p>No consultancy bookings found</p>
                       <p className="text-sm">Try adjusting your filters</p>
