@@ -23,6 +23,8 @@ interface SystemConfigData {
   smsWarningTries: number;
   paystackPublicApiKey: string;
   fileUploadLimit: number;
+  referralCommissionPercent: number;
+  customerAppUrl: string;
 }
 
 interface AdvertData {
@@ -83,6 +85,8 @@ const initialSystemConfig: SystemConfigData = {
   smsWarningTries: 0,
   paystackPublicApiKey: '',
   fileUploadLimit: 0,
+  referralCommissionPercent: 0,
+  customerAppUrl: 'https://airstatelaps.com',
 };
 
 const initialAdvertData: AdvertData = {
@@ -269,7 +273,9 @@ const AdminConfiguration: React.FC = () => {
         setConfigData({
           ...initialSystemConfig,
           ...data,
-          maintenanceMode: data.maintenanceMode ?? false
+          maintenanceMode: data.maintenanceMode ?? false,
+          customerAppUrl: data.customerAppUrl || initialSystemConfig.customerAppUrl,
+          referralCommissionPercent: data.referralCommissionPercent ?? 0,
         });
       }
 
@@ -453,6 +459,8 @@ const AdminConfiguration: React.FC = () => {
         smsWarningTries: 'SMS Warning Tries',
         paystackPublicApiKey: 'Paystack Public API Key',
         fileUploadLimit: 'File Upload Limit',
+        referralCommissionPercent: 'Referral Commission Percent',
+        customerAppUrl: 'Customer App URL',
       };
 
       Object.keys(newData).forEach((key) => {
@@ -681,6 +689,34 @@ const AdminConfiguration: React.FC = () => {
                   dataType="config"
                   placeholder="Enter amount in currency units"
                   icon={<DollarSign className="w-5 h-5" />}
+                  onChange={handleInputChange}
+                  isEditing={isEditing}
+                  visiblePasswords={visiblePasswords}
+                  togglePasswordVisibility={togglePasswordVisibility}
+                  inputValues={inputValues}
+                />
+                <ConfigField
+                  label="Referral Commission %"
+                  name="referralCommissionPercent"
+                  type="number"
+                  value={configData.referralCommissionPercent}
+                  dataType="config"
+                  placeholder="e.g. 20"
+                  icon={<DollarSign className="w-5 h-5" />}
+                  onChange={handleInputChange}
+                  isEditing={isEditing}
+                  visiblePasswords={visiblePasswords}
+                  togglePasswordVisibility={togglePasswordVisibility}
+                  inputValues={inputValues}
+                />
+                <ConfigField
+                  label="Customer App URL"
+                  name="customerAppUrl"
+                  type="text"
+                  value={configData.customerAppUrl}
+                  dataType="config"
+                  placeholder="https://airstatelaps.com"
+                  icon={<MapPin className="w-5 h-5" />}
                   onChange={handleInputChange}
                   isEditing={isEditing}
                   visiblePasswords={visiblePasswords}

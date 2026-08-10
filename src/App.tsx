@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Login, SignUp, ForgotPassword, OtpEntry, ResetPassword } from "./Auth";
-import { Splash, Home,UserDetailModal, RequestHistoryPage,Tabs,TransactionHistoryPage ,ClientMessaging,DueDiligence, Services, Lostland,Profile,Support,AdminRequest,Consultancy,AdminConfiguration,AdminManagement } from './pages';
+import { Splash, Home,UserDetailModal, RequestHistoryPage,Tabs,TransactionHistoryPage ,ClientMessaging,DueDiligence, Services, Lostland,Profile,Support,AdminRequest,Consultancy,AdminConfiguration,AdminManagement,Partners } from './pages';
 import ConsultancyList from './pages/ConsultancyList';
 import { DefaultLayout } from "./components";
 import { Toaster } from 'react-hot-toast';
@@ -140,6 +140,16 @@ function App() {
               <ProtectedRoute>
                 <DefaultLayout>
                   <AdminManagement />
+                </DefaultLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/partners"
+            element={
+              <ProtectedRoute>
+                <DefaultLayout>
+                  <Partners />
                 </DefaultLayout>
               </ProtectedRoute>
             }

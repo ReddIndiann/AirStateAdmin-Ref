@@ -65,6 +65,7 @@ const navItems: NavLinkItem[] = [
     subItems: [
       { to: "/adminConfig", icon: <RiHistoryFill />, label: "Admin Configuration" },
       { to: "/adminManagement", icon: <FaUser />, label: "Admin Management" },
+      { to: "/partners", icon: <FaUser />, label: "Partners" },
       { to: "/support", icon: <MdSupportAgent />, label: "Support" },
     ]
   },
