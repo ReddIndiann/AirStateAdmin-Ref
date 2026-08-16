@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { BrowserRouter, Route, Routes } from "react-router-dom";
 import { Login, SignUp, ForgotPassword, OtpEntry, ResetPassword } from "./Auth";
-import { Splash, Home,UserDetailModal, RequestHistoryPage,Tabs,TransactionHistoryPage ,ClientMessaging,DueDiligence, Services, Lostland,Profile,Support,AdminRequest,Consultancy,AdminConfiguration,AdminManagement,Partners } from './pages';
+import { Splash, Home,UserDetailModal, RequestHistoryPage,Tabs,TransactionHistoryPage ,ClientMessaging,DueDiligence, Services, Lostland,Profile,Support,AdminRequest,Consultancy,AdminConfiguration,AdminManagement,Partners,PricingTiers } from './pages';
 import ConsultancyList from './pages/ConsultancyList';
 import { DefaultLayout } from "./components";
 import { Toaster } from 'react-hot-toast';
@@ -150,6 +150,16 @@ function App() {
               <ProtectedRoute>
                 <DefaultLayout>
                   <Partners />
+                </DefaultLayout>
+              </ProtectedRoute>
+            }
+          />
+          <Route
+            path="/pricing-tiers"
+            element={
+              <ProtectedRoute>
+                <DefaultLayout>
+                  <PricingTiers />
                 </DefaultLayout>
               </ProtectedRoute>
             }

@@ -11,6 +11,7 @@ export {default as Consultancy} from './Consultancy';
 export {default as AdminConfiguration} from './AdminConfiguration';
 export {default as AdminManagement} from './AdminManagement';
 export {default as Partners} from './Partners';
+export {default as PricingTiers} from './PricingTiers';
 export {default as TransactionHistoryPage} from './Payments';
 export {default as ClientMessaging} from './CustomerMessages';
 export {default as Tabs} from './Tabs';

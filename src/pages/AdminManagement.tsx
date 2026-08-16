@@ -272,7 +272,11 @@ const AdminManagement: React.FC = () => {
                 <Shield className="w-6 h-6 text-red-600" />
                 Admin Management
               </h1>
-              <p className="text-gray-600 mt-1">Manage admin accounts and permissions</p>
+              <p className="text-gray-600 mt-1">
+                Manage admin accounts and permissions. To promote an existing customer, use{' '}
+                <span className="font-medium">User Management</span> → open user →{' '}
+                <span className="font-medium">Make admin</span>.
+              </p>
             </div>
             <button
               onClick={() => setIsModalOpen(true)}
