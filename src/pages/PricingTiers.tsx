@@ -25,8 +25,6 @@ import LoadingSpinner from '../components/LoadingSpinner';
 import {
   PricingTier as Tier,
   normalizePriceRanges,
-  formatPriceRangeLabel,
-  rangeKey,
   sanitizeSpecialPrices,
   sanitizeSpecialPriceRanges,
   initRangeOverrideForm,
