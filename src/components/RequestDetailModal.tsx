@@ -11,7 +11,8 @@ import {
   Info,
   Wallet,
   MessageSquare,
-  Mail
+  Mail,
+  Layers
 } from 'lucide-react';
 import { db, storage } from '../firebase/config';  // Ensure to import your Firebase config
 import { doc, updateDoc, getDoc } from 'firebase/firestore';  // Import Firestore functions
@@ -321,6 +322,13 @@ const RequestDetailModal: React.FC<RequestDetailModalProps> = ({ request, onClos
           <div>
             <p className="font-semibold text-gray-700 text-sm">Address</p>
             <p className="text-gray-600 text-sm">{request.address}</p>
+          </div>
+        </div>
+        <div className="flex items-center space-x-2">
+          <Layers className="text-red-400" size={16} />
+          <div>
+            <p className="font-semibold text-gray-700 text-sm">Acres</p>
+            <p className="text-gray-600 text-sm">{request.acres != null ? request.acres : 'Not provided'}</p>
           </div>
         </div>
         <div className="flex items-center space-x-2">

@@ -3,7 +3,7 @@ import { Timestamp, collection, doc, getDocs, updateDoc } from 'firebase/firesto
 import { db } from '../firebase/config';
 import { toast } from 'react-hot-toast';
 import { Shield } from 'lucide-react';
-import { PricingTier, SpecialPrices, sanitizeSpecialPrices } from '../lib/pricing';
+import { PricingTier, SpecialPrices, SpecialPriceRanges, normalizePriceRanges, formatPriceRangeLabel, rangeKey, sanitizeSpecialPrices, sanitizeSpecialPriceRanges, initRangeOverrideForm } from '../lib/pricing';
 import { useUser } from '../Context/AuthContext';
 
 interface User {
@@ -19,6 +19,7 @@ interface User {
   createdAt: Timestamp | { toDate: () => Date } | null;
   pricingTierId?: string | null;
   specialPrices?: SpecialPrices;
+  specialPriceRanges?: SpecialPriceRanges;
   consultancySpecialAmount?: number | null;
 }
 
@@ -26,6 +27,7 @@ interface Service {
   id: string;
   service_name: string;
   price: string | number;
+  priceRanges?: { minAcres: number; maxAcres: number; price: number }[];
 }
 
 interface UserDetailModalProps {
@@ -48,6 +50,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
   const [services, setServices] = useState<Service[]>([]);
   const [pricingTierId, setPricingTierId] = useState(user.pricingTierId || '');
   const [specialPrices, setSpecialPrices] = useState<Record<string, string>>({});
+  const [specialRangePrices, setSpecialRangePrices] = useState<Record<string, Record<string, string>>>({});
   const [consultancySpecialAmount, setConsultancySpecialAmount] = useState(
     user.consultancySpecialAmount != null ? String(user.consultancySpecialAmount) : ''
   );
@@ -92,6 +95,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
             name: data.name || '',
             active: data.active !== false,
             prices: data.prices || {},
+            priceRanges: data.priceRanges || {},
             consultancyAmount: data.consultancyAmount ?? null,
           } as PricingTier;
         });
@@ -102,6 +106,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
           id: d.id,
           service_name: d.data().service_name || 'Untitled',
           price: d.data().price ?? 0,
+          priceRanges: d.data().priceRanges,
         }));
         setServices(servicesData);
 
@@ -110,11 +115,16 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
           Object.fromEntries(
             servicesData.map((s) => [
               s.id,
-              existing[s.id] !== undefined && existing[s.id] !== null
-                ? String(existing[s.id])
-                : '',
+              normalizePriceRanges(s.priceRanges).length
+                ? ''
+                : existing[s.id] !== undefined && existing[s.id] !== null
+                  ? String(existing[s.id])
+                  : '',
             ])
           )
+        );
+        setSpecialRangePrices(
+          initRangeOverrideForm(servicesData, user.specialPriceRanges)
         );
       } catch (error) {
         console.error('Error loading pricing data:', error);
@@ -125,10 +135,19 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
     };
 
     void loadPricingData();
-  }, [user.specialPrices]);
+  }, [user.specialPrices, user.specialPriceRanges]);
 
   const handleSavePricing = async () => {
     const prices = sanitizeSpecialPrices(specialPrices);
+    const catalogByService = Object.fromEntries(
+      services.map((service) => [service.id, normalizePriceRanges(service.priceRanges)])
+    );
+    const rangePrices = sanitizeSpecialPriceRanges(catalogByService, specialRangePrices);
+    for (const service of services) {
+      if (normalizePriceRanges(service.priceRanges).length) {
+        delete prices[service.id];
+      }
+    }
     let consultancy: number | null = null;
     if (consultancySpecialAmount.trim() !== '') {
       const num = Number(consultancySpecialAmount);
@@ -144,6 +163,7 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
       const patch = {
         pricingTierId: pricingTierId || null,
         specialPrices: prices,
+        specialPriceRanges: rangePrices,
         consultancySpecialAmount: consultancy,
       };
       await updateDoc(doc(db, 'users', user.uid), patch);
@@ -382,43 +402,90 @@ const UserDetailModal: React.FC<UserDetailModalProps> = ({
                     <p className="text-xs text-gray-500 mb-2">
                       Individual service prices (leave blank to use tier / general)
                     </p>
-                    <div className="space-y-2">
-                      {services.map((service) => (
-                        <div
-                          key={service.id}
-                          className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center"
-                        >
-                          <div>
-                            <p className="text-sm font-medium text-gray-800">
-                              {service.service_name}
-                            </p>
-                            <p className="text-xs text-gray-400">General: GHC {service.price}</p>
-                            {selectedTier?.prices?.[service.id] != null && (
-                              <p className="text-xs text-red-600 font-medium">
-                                {selectedTier.name}: GHC {selectedTier.prices[service.id]}
+                    <div className="space-y-4">
+                      {services.map((service) => {
+                        const catalogRanges = normalizePriceRanges(service.priceRanges);
+                        if (catalogRanges.length) {
+                          return (
+                            <div key={service.id} className="rounded-lg border border-gray-200 bg-white p-3 space-y-2">
+                              <div>
+                                <p className="text-sm font-medium text-gray-800">{service.service_name}</p>
+                                <p className="text-xs text-gray-400">Override per acre range (leave blank to use catalog / tier)</p>
+                              </div>
+                              {catalogRanges.map((band) => {
+                                const key = rangeKey(band.minAcres, band.maxAcres);
+                                const tierBand = selectedTier?.priceRanges?.[service.id]?.find(
+                                  (row) => row.minAcres === band.minAcres && row.maxAcres === band.maxAcres
+                                );
+                                return (
+                                  <div key={key} className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                                    <p className="text-xs text-gray-600">{formatPriceRangeLabel(band)}</p>
+                                    <p className="text-xs text-gray-400">Catalog: GHC {band.price}</p>
+                                    <input
+                                      type="number"
+                                      min="0"
+                                      step="0.01"
+                                      value={specialRangePrices[service.id]?.[key] ?? ''}
+                                      onChange={(e) =>
+                                        setSpecialRangePrices((prev) => ({
+                                          ...prev,
+                                          [service.id]: {
+                                            ...(prev[service.id] || {}),
+                                            [key]: e.target.value,
+                                          },
+                                        }))
+                                      }
+                                      placeholder={
+                                        tierBand
+                                          ? `Tier: GHC ${tierBand.price}`
+                                          : 'Override'
+                                      }
+                                      className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                                    />
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          );
+                        }
+
+                        return (
+                          <div
+                            key={service.id}
+                            className="grid grid-cols-1 sm:grid-cols-2 gap-2 items-center"
+                          >
+                            <div>
+                              <p className="text-sm font-medium text-gray-800">
+                                {service.service_name}
                               </p>
-                            )}
+                              <p className="text-xs text-gray-400">General: GHC {service.price}</p>
+                              {selectedTier?.prices?.[service.id] != null && (
+                                <p className="text-xs text-red-600 font-medium">
+                                  {selectedTier.name}: GHC {selectedTier.prices[service.id]}
+                                </p>
+                              )}
+                            </div>
+                            <input
+                              type="number"
+                              min="0"
+                              step="0.01"
+                              value={specialPrices[service.id] ?? ''}
+                              onChange={(e) =>
+                                setSpecialPrices((prev) => ({
+                                  ...prev,
+                                  [service.id]: e.target.value,
+                                }))
+                              }
+                              placeholder={
+                                selectedTier?.prices?.[service.id] != null
+                                  ? `Uses ${selectedTier.name}: GHC ${selectedTier.prices[service.id]}`
+                                  : 'Override'
+                              }
+                              className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
+                            />
                           </div>
-                          <input
-                            type="number"
-                            min="0"
-                            step="0.01"
-                            value={specialPrices[service.id] ?? ''}
-                            onChange={(e) =>
-                              setSpecialPrices((prev) => ({
-                                ...prev,
-                                [service.id]: e.target.value,
-                              }))
-                            }
-                            placeholder={
-                              selectedTier?.prices?.[service.id] != null
-                                ? `Uses ${selectedTier.name}: GHC ${selectedTier.prices[service.id]}`
-                                : 'Override'
-                            }
-                            className="w-full border rounded-md px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-red-500"
-                          />
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
 

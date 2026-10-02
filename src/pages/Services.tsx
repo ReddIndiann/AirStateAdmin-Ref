@@ -19,16 +19,20 @@ import {
   Search,
   Package,
   AlertTriangle,
-  DollarSign,
   FileText,
   MoreVertical,
   CheckCircle,
   RefreshCw,
   Sparkles,
-  TrendingUp,
-  Layers
+  TrendingUp
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
+import {
+  PriceRange,
+  normalizePriceRanges,
+  startingPriceFromRanges,
+  validatePriceRanges,
+} from '../lib/pricing';
 
 // TypeScript interfaces
 interface Service {
@@ -37,16 +41,44 @@ interface Service {
   price: string | number;
   land_size: string | number;
   description: string;
+  priceRanges?: PriceRange[];
   createdAt?: Date;
   updatedAt?: Date;
 }
 
+interface RangeFormRow {
+  minAcres: string;
+  maxAcres: string;
+  price: string;
+}
+
 interface ServiceFormData {
   service_name: string;
-  price: string;
   description: string;
-  land_size: string;
+  priceRanges: RangeFormRow[];
 }
+
+const emptyRangeRow = (): RangeFormRow => ({ minAcres: '', maxAcres: '', price: '' });
+
+const rangesToFormRows = (service?: Service | null): RangeFormRow[] => {
+  const existing = normalizePriceRanges(service?.priceRanges);
+  if (existing.length) {
+    return existing.map((range) => ({
+      minAcres: String(range.minAcres),
+      maxAcres: String(range.maxAcres),
+      price: String(range.price),
+    }));
+  }
+
+  const price = service?.price !== undefined && service.price !== '' ? String(service.price) : '';
+  const landSize = String(service?.land_size ?? '');
+  const acreMatch = landSize.match(/(\d+(?:\.\d+)?)/);
+  return [{
+    minAcres: '0',
+    maxAcres: acreMatch?.[1] || '1',
+    price,
+  }];
+};
 
 // Memoized Components
 const SearchInput = memo(({ value, onChange }: { 
@@ -98,6 +130,35 @@ const ServiceForm = memo(({
     }));
   }, []);
 
+  const handleRangeChange = useCallback((
+    index: number,
+    field: keyof RangeFormRow,
+    value: string
+  ) => {
+    setFormData(prev => ({
+      ...prev,
+      priceRanges: prev.priceRanges.map((row, rowIndex) =>
+        rowIndex === index ? { ...row, [field]: value } : row
+      ),
+    }));
+  }, []);
+
+  const handleAddRange = useCallback(() => {
+    setFormData(prev => ({
+      ...prev,
+      priceRanges: [...prev.priceRanges, emptyRangeRow()],
+    }));
+  }, []);
+
+  const handleRemoveRange = useCallback((index: number) => {
+    setFormData(prev => ({
+      ...prev,
+      priceRanges: prev.priceRanges.length === 1
+        ? prev.priceRanges
+        : prev.priceRanges.filter((_, rowIndex) => rowIndex !== index),
+    }));
+  }, []);
+
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     await onSubmit(formData);
@@ -125,47 +186,77 @@ const ServiceForm = memo(({
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-        <div className="space-y-2">
+      <div className="space-y-3">
+        <div className="flex items-center justify-between gap-3">
           <label className="block text-sm font-semibold text-gray-700">
-            Price (GHC) <span className="text-red-500">*</span>
+            Acre price ranges <span className="text-red-500">*</span>
           </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <DollarSign className="h-5 w-5 text-gray-400" />
-            </div>
-            <input
-              type="number"
-              name="price"
-              value={formData.price}
-              onChange={handleChange}
-              className="block w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 focus:bg-white transition-all shadow-sm"
-              placeholder="0.00"
-              step="0.01"
-              min="0"
-              required
-            />
-          </div>
+          <button
+            type="button"
+            onClick={handleAddRange}
+            className="text-sm font-semibold text-red-600 hover:text-red-700 flex items-center gap-1"
+          >
+            <Plus className="w-4 h-4" /> Add range
+          </button>
         </div>
-        
-        <div className="space-y-2">
-          <label className="block text-sm font-semibold text-gray-700">
-            Land Size <span className="text-red-500">*</span>
-          </label>
-          <div className="relative">
-            <div className="absolute inset-y-0 left-0 pl-4 flex items-center pointer-events-none">
-              <Layers className="h-5 w-5 text-gray-400" />
+        <p className="text-xs text-gray-500">
+          Example: 0–1 acres = GHC 1500, 1–5 acres = GHC 2500. The customer enters acres and we charge the matching range.
+        </p>
+        <div className="space-y-3">
+          {formData.priceRanges.map((range, index) => (
+            <div key={index} className="grid grid-cols-12 gap-2 items-end">
+              <div className="col-span-4 space-y-1">
+                <label className="text-xs font-medium text-gray-500">Min acres</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={range.minAcres}
+                  onChange={(e) => handleRangeChange(index, 'minAcres', e.target.value)}
+                  className="block w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 focus:bg-white"
+                  placeholder="0"
+                  required
+                />
+              </div>
+              <div className="col-span-4 space-y-1">
+                <label className="text-xs font-medium text-gray-500">Max acres</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={range.maxAcres}
+                  onChange={(e) => handleRangeChange(index, 'maxAcres', e.target.value)}
+                  className="block w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 focus:bg-white"
+                  placeholder="1"
+                  required
+                />
+              </div>
+              <div className="col-span-3 space-y-1">
+                <label className="text-xs font-medium text-gray-500">Price (GHC)</label>
+                <input
+                  type="number"
+                  min="0"
+                  step="0.01"
+                  value={range.price}
+                  onChange={(e) => handleRangeChange(index, 'price', e.target.value)}
+                  className="block w-full px-3 py-2.5 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 focus:bg-white"
+                  placeholder="1500"
+                  required
+                />
+              </div>
+              <div className="col-span-1 pb-1">
+                <button
+                  type="button"
+                  onClick={() => handleRemoveRange(index)}
+                  disabled={formData.priceRanges.length === 1}
+                  className="p-2.5 text-gray-400 hover:text-red-600 disabled:opacity-30 disabled:hover:text-gray-400 rounded-xl hover:bg-red-50"
+                  aria-label="Remove range"
+                >
+                  <Trash2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
-            <input
-              type="text"
-              name="land_size"
-              value={formData.land_size}
-              onChange={handleChange}
-              className="block w-full pl-12 pr-4 py-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 focus:border-red-500 focus:bg-white transition-all shadow-sm"
-              placeholder="Enter land size metrics here (e.g. 1000 sq.ft, 1 acre, etc.)"
-              required
-            />
-          </div>
+          ))}
         </div>
       </div>
 
@@ -291,12 +382,23 @@ const ServiceCard = memo(({
         
         <div className="mt-auto pt-4 border-t border-gray-100">
           <div className="flex items-center justify-between">
-            <div className="flex flex-col">
-              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Price</span>
-              <div className="flex items-baseline gap-1">
-                <span className="text-2xl font-bold text-gray-900">GHC {service.price}</span>
-                <span className="text-sm text-gray-500">/ {service.land_size}</span>
-              </div>
+            <div className="flex flex-col w-full pr-3">
+              <span className="text-xs font-medium text-gray-500 uppercase tracking-wide mb-1">Price ranges</span>
+              {normalizePriceRanges(service.priceRanges).length ? (
+                <div className="space-y-1">
+                  {normalizePriceRanges(service.priceRanges).map((range) => (
+                    <div key={`${range.minAcres}-${range.maxAcres}-${range.price}`} className="flex items-baseline justify-between gap-3">
+                      <span className="text-xs text-gray-500">{range.minAcres}–{range.maxAcres} acres</span>
+                      <span className="text-sm font-semibold text-gray-900">GHC {range.price}</span>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="flex items-baseline gap-1">
+                  <span className="text-2xl font-bold text-gray-900">GHC {service.price}</span>
+                  <span className="text-sm text-gray-500">/ {service.land_size}</span>
+                </div>
+              )}
             </div>
             <div className="flex gap-2">
               <button
@@ -336,7 +438,7 @@ const Modal = memo(({
   children: React.ReactNode;
   title?: string;
   description?: string;
-  size?: 'sm' | 'md' | 'lg';
+  size?: 'sm' | 'md' | 'lg' | 'xl';
 }) => {
   if (!isOpen) return null;
 
@@ -344,6 +446,7 @@ const Modal = memo(({
     sm: 'max-w-sm',
     md: 'max-w-md',
     lg: 'max-w-lg',
+    xl: 'max-w-2xl',
   };
 
   return (
@@ -430,18 +533,37 @@ const AdminServiceManagement: React.FC = () => {
   }, []);
 
   const handleServiceSubmit = useCallback(async (formData: ServiceFormData) => {
+    const priceRanges = formData.priceRanges.map((row) => ({
+      minAcres: Number(row.minAcres),
+      maxAcres: Number(row.maxAcres),
+      price: Number(row.price),
+    }));
+    const rangeError = validatePriceRanges(priceRanges);
+    if (rangeError) {
+      toast.error(rangeError);
+      return;
+    }
+
+    const payload = {
+      service_name: formData.service_name.trim(),
+      description: formData.description.trim(),
+      priceRanges,
+      price: startingPriceFromRanges(priceRanges),
+      land_size: 'acres',
+    };
+
     setLoading(true);
     try {
       if (selectedService) {
         const serviceRef = doc(db, 'ServiceList', selectedService.id);
         await updateDoc(serviceRef, {
-          ...formData,
+          ...payload,
           updatedAt: serverTimestamp(),
         });
         toast.success('Service updated successfully');
       } else {
         await addDoc(collection(db, 'ServiceList'), {
-          ...formData,
+          ...payload,
           createdAt: serverTimestamp(),
         });
         toast.success('Service added successfully');
@@ -538,7 +660,7 @@ const AdminServiceManagement: React.FC = () => {
               <h1 className="text-4xl font-bold text-gray-900">Service Management</h1>
               <p className="mt-1 text-gray-600 flex items-center gap-2">
                 <Sparkles className="w-4 h-4 text-red-500" />
-                Manage your services, prices, and descriptions
+                Manage services and acre price ranges
               </p>
             </div>
           </div>
@@ -612,16 +734,17 @@ const AdminServiceManagement: React.FC = () => {
         isOpen={isEditModalOpen}
         onClose={handleCloseModals}
         title="Edit Service"
-        description="Update the service details below."
+        description="Set acre ranges and a price for each band."
+        size="xl"
       >
-        <ServiceForm 
+        <ServiceForm
+          key={selectedService?.id || 'edit'}
           onSubmit={handleServiceSubmit}
           isEdit={true}
           initialData={{
             service_name: selectedService?.service_name || '',
-            price: selectedService?.price ? String(selectedService.price) : '',
             description: selectedService?.description || '',
-            land_size: selectedService?.land_size ? String(selectedService.land_size) : '',
+            priceRanges: rangesToFormRows(selectedService),
           }}
           onCancel={handleCloseModals}
         />
@@ -632,16 +755,17 @@ const AdminServiceManagement: React.FC = () => {
         isOpen={isAddModalOpen}
         onClose={handleCloseModals}
         title="Add New Service"
-        description="Enter the details for the new service."
+        description="Set acre ranges and a price for each band."
+        size="xl"
       >
-        <ServiceForm 
+        <ServiceForm
+          key="new"
           onSubmit={handleServiceSubmit}
           isEdit={false}
           initialData={{
             service_name: '',
-            price: '',
             description: '',
-            land_size: '',
+            priceRanges: [emptyRangeRow()],
           }}
           onCancel={handleCloseModals}
         />

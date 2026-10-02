@@ -22,12 +22,21 @@ import {
   DollarSign,
 } from 'lucide-react';
 import LoadingSpinner from '../components/LoadingSpinner';
-import { PricingTier as Tier, sanitizeSpecialPrices } from '../lib/pricing';
+import {
+  PricingTier as Tier,
+  normalizePriceRanges,
+  formatPriceRangeLabel,
+  rangeKey,
+  sanitizeSpecialPrices,
+  sanitizeSpecialPriceRanges,
+  initRangeOverrideForm,
+} from '../lib/pricing';
 
 interface Service {
   id: string;
   service_name: string;
   price: string | number;
+  priceRanges?: { minAcres: number; maxAcres: number; price: number }[];
 }
 
 interface TierFormState {
@@ -35,13 +44,19 @@ interface TierFormState {
   active: boolean;
   consultancyAmount: string;
   prices: Record<string, string>;
+  rangePrices: Record<string, Record<string, string>>;
 }
 
 const emptyForm = (services: Service[]): TierFormState => ({
   name: '',
   active: true,
   consultancyAmount: '',
-  prices: Object.fromEntries(services.map((s) => [s.id, ''])),
+  prices: Object.fromEntries(
+    services
+      .filter((service) => !normalizePriceRanges(service.priceRanges).length)
+      .map((s) => [s.id, ''])
+  ),
+  rangePrices: initRangeOverrideForm(services),
 });
 
 const PricingTiersPage: React.FC = () => {
@@ -72,6 +87,7 @@ const PricingTiersPage: React.FC = () => {
         id: d.id,
         service_name: d.data().service_name || 'Untitled',
         price: d.data().price ?? 0,
+        priceRanges: d.data().priceRanges,
       }));
       setServices(servicesData);
 
@@ -82,6 +98,7 @@ const PricingTiersPage: React.FC = () => {
           name: data.name || '',
           active: data.active !== false,
           prices: data.prices || {},
+          priceRanges: data.priceRanges || {},
           consultancyAmount: data.consultancyAmount ?? null,
           createdAt: data.createdAt,
           updatedAt: data.updatedAt,
@@ -118,13 +135,16 @@ const PricingTiersPage: React.FC = () => {
           ? String(tier.consultancyAmount)
           : '',
       prices: Object.fromEntries(
-        services.map((s) => [
-          s.id,
-          tier.prices?.[s.id] !== undefined && tier.prices?.[s.id] !== null
-            ? String(tier.prices[s.id])
-            : '',
-        ])
+        services
+          .filter((service) => !normalizePriceRanges(service.priceRanges).length)
+          .map((s) => [
+            s.id,
+            tier.prices?.[s.id] !== undefined && tier.prices?.[s.id] !== null
+              ? String(tier.prices[s.id])
+              : '',
+          ])
       ),
+      rangePrices: initRangeOverrideForm(services, tier.priceRanges),
     });
     setIsModalOpen(true);
   };
@@ -144,6 +164,15 @@ const PricingTiersPage: React.FC = () => {
     }
 
     const prices = sanitizeSpecialPrices(form.prices);
+    const catalogByService = Object.fromEntries(
+      services.map((service) => [service.id, normalizePriceRanges(service.priceRanges)])
+    );
+    const priceRanges = sanitizeSpecialPriceRanges(catalogByService, form.rangePrices);
+    for (const service of services) {
+      if (normalizePriceRanges(service.priceRanges).length) {
+        delete prices[service.id];
+      }
+    }
     const consultancyRaw = form.consultancyAmount.trim();
     let consultancyAmount: number | null = null;
     if (consultancyRaw !== '') {
@@ -161,6 +190,7 @@ const PricingTiersPage: React.FC = () => {
         name,
         active: form.active,
         prices,
+        priceRanges,
         consultancyAmount,
         updatedAt: serverTimestamp(),
       };
@@ -382,7 +412,7 @@ const PricingTiersPage: React.FC = () => {
                   <h3 className="text-sm font-semibold text-gray-800">Service prices (fixed GHC)</h3>
                 </div>
                 <p className="text-xs text-gray-500 mb-3">
-                  Leave blank to keep the general catalog price for that service.
+                  Leave blank to keep the catalog range price. A special price here overrides every acre range for that service.
                 </p>
                 <div className="space-y-3">
                   {services.length === 0 ? (

@@ -20,8 +20,8 @@ export interface Request {
 
   name: string;
   phoneNumber: string;
-
-  // Add other request-specific fields as needed
+  acres?: number;
+  price?: number;
 }
 
 export interface Consultancy {
