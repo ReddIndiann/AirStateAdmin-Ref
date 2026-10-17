@@ -9,19 +9,29 @@ const EXPIRATION_TIME = 60 * 60 * 1000;
 
 // Provider component
 export const UserProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
-  const [user, setUser] = useState<User | null>(null);
+  const [user, setUser] = useState<User | null>(() => {
+    try {
+      const storedUser = localStorage.getItem('user');
+      const expiration = localStorage.getItem('expiration');
 
-  // Load user from localStorage on initial load
+      if (storedUser && expiration) {
+        const currentTime = new Date().getTime();
+        if (currentTime < parseInt(expiration, 10)) {
+          return JSON.parse(storedUser);
+        }
+      }
+      return null;
+    } catch {
+      return null;
+    }
+  });
+
+  // Verify expiration on load/mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('user');
     const expiration = localStorage.getItem('expiration');
-
-    if (storedUser && expiration) {
+    if (expiration) {
       const currentTime = new Date().getTime();
-      if (currentTime < parseInt(expiration, 10)) {
-        setUser(JSON.parse(storedUser));
-      } else {
-        // Clear user data if expired
+      if (currentTime >= parseInt(expiration, 10)) {
         logout();
       }
     }
